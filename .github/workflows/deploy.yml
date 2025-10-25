@@ -28,7 +28,7 @@ env:
   SERVER_NAME: prepyapi.adraproductstudio.com
 
 jobs:
-  deploy:
+    deploy:
     name: Deploy to AWS EC2
     runs-on: ubuntu-latest
 
