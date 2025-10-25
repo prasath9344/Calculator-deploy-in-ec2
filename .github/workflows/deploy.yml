@@ -39,7 +39,7 @@ jobs:
         with:
           audience: sts.amazonaws.com
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::211125529910:role/prepyaiapi
+          role-to-assume: 
 
       - name: Install runner dependencies (jq)
         run: |
