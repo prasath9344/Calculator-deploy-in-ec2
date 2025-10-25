@@ -239,6 +239,7 @@ jobs:
           # Write .env to /home/ubuntu/.env (use secrets provided by the workflow)
           cat > /home/ubuntu/.env <<ENVEOF
           # Write the .env file locally (on GitHub runner)
+      
       - name: Create and send .env file to EC2
         run: |
           # Create .env file locally on the GitHub runner
