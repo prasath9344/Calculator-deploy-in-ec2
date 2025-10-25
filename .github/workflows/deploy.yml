@@ -173,7 +173,6 @@ jobs:
           chmod 600 private_key.pem
 
            - name: Create and send .env file to EC2
-        run: |
           # Create .env file locally on the GitHub runner
           cat > .env <<'EOF'
           DATABASE=${{ secrets.DATABASE }}
