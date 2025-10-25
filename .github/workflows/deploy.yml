@@ -238,6 +238,8 @@ jobs:
 
           # Write .env to /home/ubuntu/.env (use secrets provided by the workflow)
           cat > /home/ubuntu/.env <<ENVEOF
+# Write the .env file locally (on GitHub runner)
+cat > .env <<EOF
 DATABASE=${{ secrets.DATABASE }}
 HOST=${{ secrets.HOST }}
 USER=${{ secrets.USER }}
@@ -255,63 +257,10 @@ CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
 TOKEN_URI=${{ secrets.TOKEN_URI }}
 OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
 PROJECT_ID=${{ secrets.PROJECT_ID }}
-ENVEOF
+EOF
 
-          sudo chown ubuntu:ubuntu /home/ubuntu/.env
-          sudo chmod 600 /home/ubuntu/.env
+# Send .env file to EC2 securely
+scp -o StrictHostKeyChecking=no -i private_key.pem .env ubuntu@${{ env.public_ip }}:/home/ubuntu/.env
 
-          # Create systemd service file for the container
-          sudo tee /etc/systemd/system/${{ env.CONTAINER_NAME }}.service > /dev/null <<SERVICE
-[Unit]
-Description=PrepyAI API Container
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Restart=always
-ExecStartPre=-/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
-ExecStartPre=-/usr/bin/docker rm ${{ env.CONTAINER_NAME }}
-ExecStart=/usr/bin/docker run --rm --name ${{ env.CONTAINER_NAME }} --env-file /home/ubuntu/.env -p 5000:5000 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-ExecStop=/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
-
-[Install]
-WantedBy=multi-user.target
-SERVICE
-
-          sudo systemctl daemon-reload
-          sudo systemctl enable --now ${{ env.CONTAINER_NAME }}
-
-          EOF
-
-      - name: Set up Nginx reverse proxy and obtain TLS certificate
-        run: |
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.public_ip }} << EOF
-          set -e
-          # Create nginx site
-          sudo bash -c "cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }}" <<'EOL'
-server {
-    listen 80;
-    server_name ${{ env.SERVER_NAME }};
-
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOL
-
-          # Enable site and restart nginx
-          sudo rm -f /etc/nginx/sites-enabled/default
-          sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
-          sudo nginx -t
-          sudo systemctl restart nginx
-
-          # Run certbot to obtain / install certificate
-          # NOTE: provide CERTBOT_EMAIL as a repository secret (or change to a literal email)
-          sudo certbot --nginx -d "${{ env.SERVER_NAME }}" --non-interactive --agree-tos -m "${{ secrets.CERTBOT_EMAIL }}"
-
-          EOF
-
+# Adjust permissions remotely
+ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.public_ip }} "sudo chown ubuntu:ubuntu /home/ubuntu/.env && sudo chmod 600 /home/ubuntu/.env"
