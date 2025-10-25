@@ -1,5 +1,5 @@
 name: Deploy calculator Docker App to AWS EC2
- on:
+on:
   workflow_dispatch:
     inputs:
       name:
