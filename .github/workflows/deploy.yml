@@ -1,11 +1,11 @@
 name: Deploy calculator Docker App to AWS EC2
 
 on:
-workflow_dispatch:
-inputs:
-name:
-description: "Deploy the calculator-app from Dev"
-default: "dev"
+  workflow_dispatch:
+   inputs:
+     name:
+       description: "Deploy the calculator-app from Dev"
+       default: "dev"
 
 permissions:
 id-token: write
@@ -14,16 +14,16 @@ contents: read
 env:
 AWS_REGION: us-east-1
 ECR_REPOSITORY: ecr-calculator
-CONTAINER_NAME: 
+CONTAINER_NAME: ecr-calculator-container
 INSTANCE_TYPE: t2.micro
 AMI_ID: ami-0bbdd8c17ed981ef9
-KEY_NAME: sample-project-ec2 key
-INSTANCE_NAME: ami-0bbdd8c17ed981ef9
+KEY_NAME: "sample-project-ec2 key"
+INSTANCE_NAME: Prasath-instance
 SECURITY_GROUP_NAME: sg-0bef46c602b37832e
 SECURITY_GROUP_DESCRIPTION: "launch-wizard-5 created"
 VPC_ID: vpc-0203ae7df1d2077e1
-EIP_ALLOCATION_ID: 
-ECR_ROLE_NAME: EC2ECRAccessRole
+EIP_ALLOCATION_ID: eipalloc-07d5ffc5af291601b
+ECR_ROLE_NAME: AWSServiceRoleForECRReplication
 
 jobs:
 deploy:
@@ -52,7 +52,9 @@ SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
 if [ "$SECURITY_GROUP_ID" == "None" ]; then
 echo "Security group does not exist."
 echo "security_group_exists=false" >> $GITHUB_ENV
-else
+elseecho "DATABASE=${{ secrets.DATABASE }}" >> /home/ubuntu/.env
+chmod 600 /home/ubuntu/.env
+
 echo "Security group exists with ID $SECURITY_GROUP_ID."
 echo "security_group_exists=true" >> $GITHUB_ENV
 echo "security_group_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
