@@ -24,15 +24,14 @@ env:
   VPC_ID: vpc-0203ae7df1d2077e1
   EIP_ALLOCATION_ID: eipalloc-07d5ffc5af291601b
   ECR_ROLE_NAME: AWSServiceRoleForECRReplication
-  # domain/email used for certbot - set these as repository secrets or update here (recommended: secrets)
   SERVER_NAME: prepyapi.adraproductstudio.com
 
-  jobs:
-        deploy:
-        name: Deploy to AWS EC2
-        runs-on: ubuntu-latest
+jobs:
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
 
-  steps:
+    steps:
       - name: Checkout
         uses: actions/checkout@v2
 
@@ -66,7 +65,6 @@ env:
           fi
 
       - name: Create Security Group
-        id: create-security-group
         if: env.security_group_exists == 'false'
         run: |
           SECURITY_GROUP_ID=$(aws ec2 create-security-group \
@@ -75,8 +73,6 @@ env:
             --vpc-id ${{ env.VPC_ID }} \
             --query 'GroupId' \
             --output text)
-
-          echo "Security Group ID is $SECURITY_GROUP_ID"
           echo "security_group_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
 
       - name: Authorize Security Group Ingress Rules (Avoid Duplicates)
@@ -105,14 +101,10 @@ env:
                 --protocol $PROTOCOL \
                 --port ${FROM_PORT}-${TO_PORT} \
                 --cidr $CIDR_IP || true
-              echo "Added rule for protocol=$PROTOCOL, port=$FROM_PORT-$TO_PORT, CIDR=$CIDR_IP."
-            else
-              echo "Rule for protocol=$PROTOCOL, port=$FROM_PORT-$TO_PORT, CIDR=$CIDR_IP already exists."
             fi
           done
 
       - name: Check if EC2 Instance Exists
-        id: check-instance
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances \
             --filters "Name=tag:Name,Values=${{ env.INSTANCE_NAME }}" "Name=instance-state-name,Values=running" \
@@ -120,10 +112,8 @@ env:
             --output text || echo "None")
 
           if [ "$INSTANCE_ID" = "None" ] || [ -z "$INSTANCE_ID" ]; then
-            echo "No running instance found with name ${{ env.INSTANCE_NAME }}."
             echo "instance_exists=false" >> $GITHUB_ENV
           else
-            echo "Instance $INSTANCE_ID already exists and is running."
             echo "instance_exists=true" >> $GITHUB_ENV
             echo "instance_id=$INSTANCE_ID" >> $GITHUB_ENV
           fi
@@ -136,14 +126,12 @@ env:
             --count 1 \
             --instance-type ${{ env.INSTANCE_TYPE }} \
             --key-name "${{ env.KEY_NAME }}" \
-            --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"Encrypted":false,"DeleteOnTermination":true,"SnapshotId":"snap-05ce578925a8cbc14","VolumeSize":30,"VolumeType":"gp2"}}]' \
+            --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"DeleteOnTermination":true,"VolumeSize":30,"VolumeType":"gp2"}}]' \
             --network-interfaces "[{\"AssociatePublicIpAddress\":true,\"DeviceIndex\":0,\"Groups\":[\"${{ env.security_group_id }}\"]}]" \
             --iam-instance-profile Name=${{ env.ECR_ROLE_NAME }} \
             --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${{ env.INSTANCE_NAME }}}]" \
             --query 'Instances[0].InstanceId' \
             --output text)
-
-          echo "Instance ID is $INSTANCE_ID"
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_ENV
 
       - name: Wait for EC2 Instance to be Running
@@ -156,7 +144,6 @@ env:
             --instance-ids ${{ env.instance_id }} \
             --query 'Reservations[0].Instances[0].PublicIpAddress' \
             --output text)
-          echo "Public IP Address is $PUBLIC_IP"
           echo "public_ip=$PUBLIC_IP" >> $GITHUB_ENV
 
       - name: Associate Elastic IP
@@ -164,14 +151,6 @@ env:
           aws ec2 associate-address \
             --instance-id ${{ env.instance_id }} \
             --allocation-id ${{ env.EIP_ALLOCATION_ID }} || true
-
-          EIP=$(aws ec2 describe-addresses \
-            --allocation-ids ${{ env.EIP_ALLOCATION_ID }} \
-            --query 'Addresses[0].PublicIp' \
-            --output text)
-
-          echo "Elastic IP is: $EIP"
-          echo "public_ip=$EIP" >> $GITHUB_ENV
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -194,56 +173,9 @@ env:
           echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
 
-      - name: Deploy to EC2 (install docker, pull image, create systemd service)
+      - name: Create and send .env file to EC2
         run: |
-          IMAGE_TAG="${{ github.sha }}"
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.public_ip }} << 'EOF'
-          set -e
-
-          # Update and install base packages
-          sudo apt-get update -y
-          sudo apt-get install -y gnupg ca-certificates curl unzip lsb-release jq
-
-          # Install nginx and certbot (certbot used later)
-          sudo apt-get install -y nginx certbot python3-certbot-nginx
-
-          # Install Docker (if not installed)
-          if ! command -v docker &> /dev/null; then
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sudo sh get-docker.sh
-            sudo usermod -aG docker ubuntu
-          fi
-
-          # Start and enable Docker
-          sudo systemctl enable --now docker
-
-          # Clean up existing container/image
-          sudo docker stop ${{ env.CONTAINER_NAME }} || true
-          sudo docker rm ${{ env.CONTAINER_NAME }} || true
-          sudo docker rmi ${{ env.CONTAINER_NAME }} || true
-          sudo docker system prune -af --volumes || true
-
-          # Install AWS CLI v2 if missing (needed to login to ECR on instance)
-          if ! command -v aws &> /dev/null; then
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install
-          fi
-
-          # Re-authenticate Docker with Amazon ECR
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | sudo docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-
-          # Pull the image
-          sudo docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-
-          # Write .env to /home/ubuntu/.env (use secrets provided by the workflow)
-          cat > /home/ubuntu/.env <<ENVEOF
-          # Write the .env file locally (on GitHub runner)
-    
-    - name: Create and send .env file to EC2
-     run: |
-      # Create .env file locally on the GitHub runner
-       cat > .env <<EOF
+          cat > .env <<EOF
 DATABASE=${{ secrets.DATABASE }}
 HOST=${{ secrets.HOST }}
 USER=${{ secrets.USER }}
@@ -263,13 +195,8 @@ OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
 PROJECT_ID=${{ secrets.PROJECT_ID }}
 EOF
 
-          # Send the .env file to EC2 securely
-          scp -o StrictHostKeyChecking=no -i private_key.pem .env ubuntu@${{ env.EC2_PUBLIC_IP }}:/home/ubuntu/.env
-
-          # Set correct permissions remotely
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} <<'CMD'
-sudo chown ubuntu:ubuntu /home/ubuntu/.env
-sudo chmod 600 /home/ubuntu/.env
+          scp -o StrictHostKeyChecking=no -i private_key.pem .env ubuntu@${{ env.public_ip }}:/home/ubuntu/.env
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.public_ip }} <<'CMD'
+            sudo chown ubuntu:ubuntu /home/ubuntu/.env
+            sudo chmod 600 /home/ubuntu/.env
 CMD
-
-     
