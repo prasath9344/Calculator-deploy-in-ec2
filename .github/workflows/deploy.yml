@@ -168,10 +168,10 @@ jobs:
           echo "image=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
            - name: Get SSH Key
-          run: |
-          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
-
+             run: |
+                 echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
+                 chmod 600 private_key.pem
+ 
       - name: Create and send .env file to EC2
         run: |
           # Create .env file locally on the GitHub runner
@@ -187,4 +187,19 @@ jobs:
           SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}
           REDIRECT_URI=${{ secrets.REDIRECT_URI }}
           JWT_ACCESS_TOKEN_EXPIRES=${{ secrets.JWT_ACCESS_TOKEN_EXPIRES }}
-          JWT
+          JWT_REFRESH_TOKEN_EXPIRES=${{ secrets.JWT_REFRESH_TOKEN_EXPIRES }}
+          CLIENT_ID=${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+          TOKEN_URI=${{ secrets.TOKEN_URI }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          PROJECT_ID=${{ secrets.PROJECT_ID }}
+          EOF
+
+          # Send the .env file to EC2
+          scp -o StrictHostKeyChecking=no -i private_key.pem .env ubuntu@${{ env.public_ip }}:/home/ubuntu/.env
+
+          # Fix permissions remotely
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.public_ip }} <<'CMD'
+            sudo chown ubuntu:ubuntu /home/ubuntu/.env
+            sudo chmod 600 /home/ubuntu/.env
+          CMD
