@@ -238,7 +238,8 @@ jobs:
 
           # Write .env to /home/ubuntu/.env (use secrets provided by the workflow)
           cat > /home/ubuntu/.env <<ENVEOF
-# Write the .env file locally (on GitHub runner)
+          # Write the .env file locally (on GitHub runner)
+
 cat > .env <<EOF
 DATABASE=${{ secrets.DATABASE }}
 HOST=${{ secrets.HOST }}
