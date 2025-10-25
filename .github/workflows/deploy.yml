@@ -167,12 +167,13 @@ jobs:
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Get SSH Key
-        run: |
+           - name: Get SSH Key
+          run: |
           echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
 
-           - name: Create and send .env file to EC2
+      - name: Create and send .env file to EC2
+        run: |
           # Create .env file locally on the GitHub runner
           cat > .env <<'EOF'
           DATABASE=${{ secrets.DATABASE }}
@@ -186,7 +187,4 @@ jobs:
           SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}
           REDIRECT_URI=${{ secrets.REDIRECT_URI }}
           JWT_ACCESS_TOKEN_EXPIRES=${{ secrets.JWT_ACCESS_TOKEN_EXPIRES }}
-          JWT_REFRESH_TOKEN_EXPIRES=${{ secrets.JWT_REFRESH_TOKEN_EXPIRES }}
-          CLIENT_ID=${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
-          TOKEN_URI=${{ secrets.TOKEN_
+          JWT
