@@ -27,12 +27,12 @@ env:
   # domain/email used for certbot - set these as repository secrets or update here (recommended: secrets)
   SERVER_NAME: prepyapi.adraproductstudio.com
 
-jobs:
-    deploy:
-    name: Deploy to AWS EC2
-    runs-on: ubuntu-latest
+  jobs:
+        deploy:
+        name: Deploy to AWS EC2
+        runs-on: ubuntu-latest
 
-    steps:
+  steps:
       - name: Checkout
         uses: actions/checkout@v2
 
