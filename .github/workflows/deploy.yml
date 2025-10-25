@@ -239,35 +239,37 @@ jobs:
           # Write .env to /home/ubuntu/.env (use secrets provided by the workflow)
           cat > /home/ubuntu/.env <<ENVEOF
           # Write the .env file locally (on GitHub runner)
-      
-      - name: Create and send .env file to EC2
-        run: |
-          # Create .env file locally on the GitHub runner
-          cat > .env <<EOF
-          DATABASE=${{ secrets.DATABASE }}
-          HOST=${{ secrets.HOST }}
-          USER=${{ secrets.USER }}
-          PASSWORD=${{ secrets.PASSWORD }}
-          MYSQL_AUTOCOMMIT=${{ secrets.MYSQL_AUTOCOMMIT }}
-          MYSQL_CONNECT_TIMEOUT=${{ secrets.MYSQL_CONNECT_TIMEOUT }}
-          JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
-          SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}
-          SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}
-          REDIRECT_URI=${{ secrets.REDIRECT_URI }}
-          JWT_ACCESS_TOKEN_EXPIRES=${{ secrets.JWT_ACCESS_TOKEN_EXPIRES }}
-          JWT_REFRESH_TOKEN_EXPIRES=${{ secrets.JWT_REFRESH_TOKEN_EXPIRES }}
-          CLIENT_ID=${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
-          TOKEN_URI=${{ secrets.TOKEN_URI }}
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          PROJECT_ID=${{ secrets.PROJECT_ID }}
-          EOF
+    
+    - name: Create and send .env file to EC2
+     run: |
+      # Create .env file locally on the GitHub runner
+       cat > .env <<EOF
+DATABASE=${{ secrets.DATABASE }}
+HOST=${{ secrets.HOST }}
+USER=${{ secrets.USER }}
+PASSWORD=${{ secrets.PASSWORD }}
+MYSQL_AUTOCOMMIT=${{ secrets.MYSQL_AUTOCOMMIT }}
+MYSQL_CONNECT_TIMEOUT=${{ secrets.MYSQL_CONNECT_TIMEOUT }}
+JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
+SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}
+SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}
+REDIRECT_URI=${{ secrets.REDIRECT_URI }}
+JWT_ACCESS_TOKEN_EXPIRES=${{ secrets.JWT_ACCESS_TOKEN_EXPIRES }}
+JWT_REFRESH_TOKEN_EXPIRES=${{ secrets.JWT_REFRESH_TOKEN_EXPIRES }}
+CLIENT_ID=${{ secrets.CLIENT_ID }}
+CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+TOKEN_URI=${{ secrets.TOKEN_URI }}
+OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+PROJECT_ID=${{ secrets.PROJECT_ID }}
+EOF
 
           # Send the .env file to EC2 securely
           scp -o StrictHostKeyChecking=no -i private_key.pem .env ubuntu@${{ env.EC2_PUBLIC_IP }}:/home/ubuntu/.env
 
           # Set correct permissions remotely
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'CMD'
-          sudo chown ubuntu:ubuntu /home/ubuntu/.env
-          sudo chmod 600 /home/ubuntu/.env
-          CMD
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} <<'CMD'
+sudo chown ubuntu:ubuntu /home/ubuntu/.env
+sudo chmod 600 /home/ubuntu/.env
+CMD
+
+     
