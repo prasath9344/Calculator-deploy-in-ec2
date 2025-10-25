@@ -26,20 +26,20 @@ EIP_ALLOCATION_ID: eipalloc-07d5ffc5af291601b
 ECR_ROLE_NAME: AWSServiceRoleForECRReplication
 
 jobs:
-deploy:
-name: Deploy to AWS EC2
-runs-on: ubuntu-latest
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
 
-steps:
-  - name: Checkout
-    uses: actions/checkout@v2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
 
-  - name: Configure AWS Credentials
-  uses: aws-actions/configure-aws-credentials@v4
-  with:
-    audience: sts.amazonaws.com
-    aws-region: ${{ env.AWS_REGION }}
-    role-to-assume: arn:aws:iam::211125529910:role/prepyaiapi
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          audience: sts.amazonaws.com
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::211125529910:role/prepyaiapi
 
 - name: Check if Security Group Exists
 id: check-security-group
