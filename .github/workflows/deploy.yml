@@ -39,7 +39,7 @@ jobs:
         with:
           audience: sts.amazonaws.com
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: 
+          role-to-assume: arn:aws:iam::934484537298:role/calculator-ecr
 
       - name: Install runner dependencies (jq)
         run: |
