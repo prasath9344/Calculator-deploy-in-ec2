@@ -1,4 +1,5 @@
 name: Deploy calculator Docker App to AWS EC2
+
 on:
   workflow_dispatch:
     inputs:
@@ -31,8 +32,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Checkout source code
+        uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -46,104 +47,62 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y jq
 
-      - name: Check if Security Group Exists
-        id: check-security-group
+      # 🛡 Security Group Setup
+      - name: Check or Create Security Group
+        id: sg
         run: |
-          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
+          SG_ID=$(aws ec2 describe-security-groups \
             --filters Name=group-name,Values=${{ env.SECURITY_GROUP_NAME }} \
-            --query 'SecurityGroups[0].GroupId' \
-            --output text || echo "None")
-
-          if [ "$SECURITY_GROUP_ID" = "None" ] || [ -z "$SECURITY_GROUP_ID" ]; then
-            echo "Security group does not exist."
-            echo "security_group_exists=false" >> $GITHUB_ENV
-          else
-            echo "Security group exists with ID $SECURITY_GROUP_ID."
-            echo "security_group_exists=true" >> $GITHUB_ENV
-            echo "security_group_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
+            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || true)
+          
+          if [ -z "$SG_ID" ] || [ "$SG_ID" = "None" ]; then
+            SG_ID=$(aws ec2 create-security-group \
+              --group-name "${{ env.SECURITY_GROUP_NAME }}" \
+              --description "${{ env.SECURITY_GROUP_DESCRIPTION }}" \
+              --vpc-id ${{ env.VPC_ID }} \
+              --query 'GroupId' --output text)
           fi
 
-      - name: Create Security Group
-        if: env.security_group_exists == 'false'
-        run: |
-          SECURITY_GROUP_ID=$(aws ec2 create-security-group \
-            --group-name "${{ env.SECURITY_GROUP_NAME }}" \
-            --description "${{ env.SECURITY_GROUP_DESCRIPTION }}" \
-            --vpc-id ${{ env.VPC_ID }} \
-            --query 'GroupId' \
-            --output text)
-          echo "security_group_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
+          echo "security_group_id=$SG_ID" >> $GITHUB_ENV
 
-      - name: Authorize Security Group Ingress Rules (Avoid Duplicates)
-        run: |
-          RULES='[
-            {"IpProtocol":"tcp","FromPort":22,"ToPort":22,"CidrIp":"0.0.0.0/0"},
-            {"IpProtocol":"tcp","FromPort":80,"ToPort":80,"CidrIp":"0.0.0.0/0"},
-            {"IpProtocol":"tcp","FromPort":443,"ToPort":443,"CidrIp":"0.0.0.0/0"},
-            {"IpProtocol":"tcp","FromPort":5000,"ToPort":5000,"CidrIp":"0.0.0.0/0"}
-          ]'
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+            --protocol tcp --port 22 --cidr 0.0.0.0/0 || true
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+            --protocol tcp --port 3000 --cidr 0.0.0.0/0 || true
 
-          for RULE in $(echo "$RULES" | jq -c '.[]'); do
-            PROTOCOL=$(echo "$RULE" | jq -r '.IpProtocol')
-            FROM_PORT=$(echo "$RULE" | jq -r '.FromPort')
-            TO_PORT=$(echo "$RULE" | jq -r '.ToPort')
-            CIDR_IP=$(echo "$RULE" | jq -r '.CidrIp')
-
-            EXISTING_RULE=$(aws ec2 describe-security-group-rules \
-              --filters Name=group-id,Values=${{ env.security_group_id }} \
-              --query "SecurityGroupRules[?FromPort==\`${FROM_PORT}\` && ToPort==\`${TO_PORT}\` && IpProtocol==\`${PROTOCOL}\` && CidrIpv4==\`${CIDR_IP}\`]" \
-              --output text)
-
-            if [ -z "$EXISTING_RULE" ]; then
-              aws ec2 authorize-security-group-ingress \
-                --group-id ${{ env.security_group_id }} \
-                --protocol $PROTOCOL \
-                --port ${FROM_PORT}-${TO_PORT} \
-                --cidr $CIDR_IP || true
-            fi
-          done
-
+      # ☁️ EC2 Instance Setup
       - name: Check if EC2 Instance Exists
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=${{ env.INSTANCE_NAME }}" "Name=instance-state-name,Values=running" \
+            --filters "Name=tag:Name,Values=${{ env.INSTANCE_NAME }}" \
+                      "Name=instance-state-name,Values=running" \
             --query 'Reservations[0].Instances[0].InstanceId' \
             --output text || echo "None")
 
-          if [ "$INSTANCE_ID" = "None" ] || [ -z "$INSTANCE_ID" ]; then
-            echo "instance_exists=false" >> $GITHUB_ENV
-          else
-            echo "instance_exists=true" >> $GITHUB_ENV
-            echo "instance_id=$INSTANCE_ID" >> $GITHUB_ENV
+          if [ "$INSTANCE_ID" = "None" ]; then
+            echo "Creating new EC2 instance..."
+            INSTANCE_ID=$(aws ec2 run-instances \
+              --image-id ${{ env.AMI_ID }} \
+              --count 1 \
+              --instance-type ${{ env.INSTANCE_TYPE }} \
+              --key-name "${{ env.KEY_NAME }}" \
+              --security-group-ids ${{ env.security_group_id }} \
+              --iam-instance-profile Name=${{ env.ECR_ROLE_NAME }} \
+              --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${{ env.INSTANCE_NAME }}}]" \
+              --query 'Instances[0].InstanceId' --output text)
           fi
 
-      - name: Create EC2 Instance (if not exists)
-        if: env.instance_exists == 'false'
-        run: |
-          INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ${{ env.AMI_ID }} \
-            --count 1 \
-            --instance-type ${{ env.INSTANCE_TYPE }} \
-            --key-name "${{ env.KEY_NAME }}" \
-            --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"DeleteOnTermination":true,"VolumeSize":30,"VolumeType":"gp2"}}]' \
-            --network-interfaces "[{\"AssociatePublicIpAddress\":true,\"DeviceIndex\":0,\"Groups\":[\"${{ env.security_group_id }}\"]}]" \
-            --iam-instance-profile Name=${{ env.ECR_ROLE_NAME }} \
-            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${{ env.INSTANCE_NAME }}}]" \
-            --query 'Instances[0].InstanceId' \
-            --output text)
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_ENV
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
 
-      - name: Wait for EC2 Instance to be Running
-        run: |
-          aws ec2 wait instance-running --instance-ids ${{ env.instance_id }}
-
-      - name: Get Public IP of EC2 Instance
+      - name: Get EC2 Public IP
         run: |
           PUBLIC_IP=$(aws ec2 describe-instances \
             --instance-ids ${{ env.instance_id }} \
             --query 'Reservations[0].Instances[0].PublicIpAddress' \
             --output text)
           echo "public_ip=$PUBLIC_IP" >> $GITHUB_ENV
+          echo "EC2 Instance Public IP: $PUBLIC_IP"
 
       - name: Associate Elastic IP
         run: |
@@ -151,55 +110,57 @@ jobs:
             --instance-id ${{ env.instance_id }} \
             --allocation-id ${{ env.EIP_ALLOCATION_ID }} || true
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      # 🐳 Build Docker Image & Save
+      - name: Build Docker image
+        run: docker build -t myapp .
+
+      - name: Save Docker image as tar
+        run: docker save myapp > myapp.tar
+
+      # 🔑 SSH Setup
+      - name: Setup SSH Key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
+      # 📦 Copy app to EC2
+      - name: Copy Docker image to EC2
+        uses: appleboy/scp-action@v0.1.7
         with:
-          mask-password: true
+          host: ${{ env.public_ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "myapp.tar"
+          target: "~/app/"
 
-      - name: Build, tag, and push image to Amazon ECR
-        id: build-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      # 🚀 Deploy app on EC2
+      - name: SSH and deploy container
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ env.public_ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            sudo apt-get update -y
+            if ! command -v docker &> /dev/null; then
+              echo "Installing Docker..."
+              sudo apt-get install -y docker.io
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
+
+            mkdir -p ~/app
+            cd ~/app
+            sudo docker load < myapp.tar
+            sudo docker stop myapp || true
+            sudo docker rm myapp || true
+            sudo docker run -d -p 3000:3000 --name myapp myapp
+
+      # 🧩 Optional: Deploy .env (if needed)
+      - name: Send .env file to EC2
+        if: env.public_ip != ''
         run: |
-          docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-          echo "image=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-           - name: Get SSH Key
-            run: |
-                 echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
-                 chmod 600 private_key.pem
- 
-      - name: Create and send .env file to EC2
-        run: |
-          # Create .env file locally on the GitHub runner
-          cat > .env <<'EOF'
-          DATABASE=${{ secrets.DATABASE }}
-          HOST=${{ secrets.HOST }}
-          USER=${{ secrets.USER }}
-          PASSWORD=${{ secrets.PASSWORD }}
-          MYSQL_AUTOCOMMIT=${{ secrets.MYSQL_AUTOCOMMIT }}
-          MYSQL_CONNECT_TIMEOUT=${{ secrets.MYSQL_CONNECT_TIMEOUT }}
-          JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
-          SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}
-          SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}
-          REDIRECT_URI=${{ secrets.REDIRECT_URI }}
-          JWT_ACCESS_TOKEN_EXPIRES=${{ secrets.JWT_ACCESS_TOKEN_EXPIRES }}
-          JWT_REFRESH_TOKEN_EXPIRES=${{ secrets.JWT_REFRESH_TOKEN_EXPIRES }}
-          CLIENT_ID=${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
-          TOKEN_URI=${{ secrets.TOKEN_URI }}
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          PROJECT_ID=${{ secrets.PROJECT_ID }}
-          EOF
-
-          # Send the .env file to EC2
-          scp -o StrictHostKeyChecking=no -i private_key.pem .env ubuntu@${{ env.public_ip }}:/home/ubuntu/.env
-
-          # Fix permissions remotely
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${{ env.public_ip }} <<'CMD'
-            sudo chown ubuntu:ubuntu /home/ubuntu/.env
-            sudo chmod 600 /home/ubuntu/.env
-          CMD
+          echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
+          scp -o StrictHostKeyChecking=no -i private_key.pem .env ubuntu@${{ env.public_ip }}:/home/ubuntu/app/.env
