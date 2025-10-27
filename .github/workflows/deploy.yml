@@ -17,12 +17,12 @@ env:
   INSTANCE_TYPE: t2.micro
   AMI_ID: ami-0bbdd8c17ed981ef9
   KEY_NAME: "sample-project-ec2 key"
-  INSTANCE_NAME: Prasath-instance
-  SECURITY_GROUP_NAME: launch-wizard-5
+  INSTANCE_NAME: prasath-ec2(27.10.2025)
+  SECURITY_GROUP_NAME: launch-wizard-6
   SECURITY_GROUP_DESCRIPTION: "launch-wizard-5 created"
   VPC_ID: vpc-0203ae7df1d2077e1
-  EIP_ALLOCATION_ID: eipalloc-07d5ffc5af291601b
-  ECR_ROLE_NAME: AWSServiceRoleForECRReplication
+  EIP_ALLOCATION_ID: eipalloc-03a2936b53e7423b8
+  ECR_ROLE_NAME: calculator-ecr
   SERVER_NAME: prepyapi.adraproductstudio.com
 
 jobs:
